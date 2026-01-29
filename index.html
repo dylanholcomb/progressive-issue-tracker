@@ -4,30 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Progressive Issue Tracker</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin 1s linear infinite; }
   </style>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel" data-presets="react">
-    const { useState } = React;
+    const { useState, useEffect } = React;
 
-    // Bill data
-    const billsData = [
-      { id: 1, dateAdded: '1/28/2026', level: 'Federal', billIssue: 'HR 1234', description: 'Climate Action Bill', status: 'Committee Hearing', actionDeadline: '2/5/2026', priority: 'RED', repsToContact: 'Matsui, Padilla, Schiff', contacted: false, notes: '' },
-      { id: 2, dateAdded: '1/27/2026', level: 'State', billIssue: 'SB 500', description: 'Tenant Protection Act', status: 'Floor Vote Scheduled', actionDeadline: '2/1/2026', priority: 'RED', repsToContact: 'Ashby, Krell', contacted: true, notes: 'Emailed 1/27' },
-      { id: 3, dateAdded: '1/26/2026', level: 'Local', billIssue: 'City Budget', description: 'Homeless services funding', status: 'Council Agenda 2/6', actionDeadline: '2/5/2026', priority: 'YELLOW', repsToContact: 'McCarty, Pluckebaum', contacted: false, notes: '' },
-      { id: 4, dateAdded: '1/25/2026', level: 'Federal', billIssue: 'HR 5678', description: 'Healthcare expansion', status: 'Introduced', actionDeadline: null, priority: 'GREEN', repsToContact: 'Watch only', contacted: false, notes: 'Monitor progress' },
-      { id: 5, dateAdded: '1/24/2026', level: 'State', billIssue: 'AB 789', description: 'Renewable Energy Standards', status: 'In Committee', actionDeadline: '2/10/2026', priority: 'YELLOW', repsToContact: 'Aguiar-Curry, Berman', contacted: false, notes: '' },
-      { id: 6, dateAdded: '1/23/2026', level: 'Federal', billIssue: 'S 234', description: 'Voting Rights Act Update', status: 'Floor Vote Pending', actionDeadline: '1/30/2026', priority: 'RED', repsToContact: 'Padilla, Butler', contacted: true, notes: 'Called offices 1/23' }
-    ];
+    // Google Sheet CSV URL
+    const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRSqXLagQ5mRRHHnf7-3aIpqCwSTTIS13piFHefooXdOwEOy9bW0p_4xyrNhryGug/pub?output=csv';
 
     const priorityStyles = {
       RED: { bg: '#FEE2E2', text: '#DC2626', label: '🔴 Urgent', gradient: 'linear-gradient(135deg, #EF4444, #E11D48)' },
@@ -41,13 +36,78 @@
       Local: { bg: '#CCFBF1', text: '#0D9488' }
     };
 
+    // Parse priority from spreadsheet (handles emoji format like "🔴 RED")
+    function parsePriority(value) {
+      if (!value) return 'GREEN';
+      const upper = value.toUpperCase();
+      if (upper.includes('RED')) return 'RED';
+      if (upper.includes('YELLOW')) return 'YELLOW';
+      return 'GREEN';
+    }
+
+    // Parse contacted status
+    function parseContacted(value) {
+      if (!value) return false;
+      const lower = value.toLowerCase();
+      return lower === 'yes' || lower === 'true' || lower === 'y';
+    }
+
     function App() {
+      const [bills, setBills] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const [lastUpdated, setLastUpdated] = useState(null);
       const [searchTerm, setSearchTerm] = useState('');
       const [levelFilter, setLevelFilter] = useState('All');
       const [priorityFilter, setPriorityFilter] = useState('All');
       const [selectedBill, setSelectedBill] = useState(null);
 
-      const filteredBills = billsData.filter(bill => {
+      // Fetch data from Google Sheet
+      useEffect(() => {
+        fetchData();
+      }, []);
+
+      const fetchData = () => {
+        setLoading(true);
+        fetch(SHEET_URL)
+          .then(response => response.text())
+          .then(csvText => {
+            Papa.parse(csvText, {
+              header: true,
+              skipEmptyLines: true,
+              complete: (results) => {
+                const parsedBills = results.data.map((row, index) => ({
+                  id: index + 1,
+                  dateAdded: row['Date Added'] || '',
+                  level: row['Level'] || 'Federal',
+                  billIssue: row['Bill/Issue'] || '',
+                  description: row['Description'] || '',
+                  status: row['Status'] || '',
+                  actionDeadline: row['Action Deadline'] || null,
+                  priority: parsePriority(row['Priority']),
+                  takeAction: row['Take Action?'] === '☑' || row['Take Action?'] === 'Yes',
+                  repsToContact: row['Reps to Contact'] || '',
+                  contacted: parseContacted(row['Contacted?']),
+                  notes: row['Outcome/Notes'] || ''
+                })).filter(bill => bill.billIssue); // Filter out empty rows
+
+                setBills(parsedBills);
+                setLastUpdated(new Date());
+                setLoading(false);
+              },
+              error: (err) => {
+                setError('Failed to parse spreadsheet data');
+                setLoading(false);
+              }
+            });
+          })
+          .catch(err => {
+            setError('Failed to fetch data from Google Sheet');
+            setLoading(false);
+          });
+      };
+
+      const filteredBills = bills.filter(bill => {
         const matchesSearch = bill.billIssue.toLowerCase().includes(searchTerm.toLowerCase()) ||
                               bill.description.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesLevel = levelFilter === 'All' || bill.level === levelFilter;
@@ -56,10 +116,35 @@
       });
 
       const stats = {
-        total: billsData.length,
-        urgent: billsData.filter(b => b.priority === 'RED').length,
-        contacted: billsData.filter(b => b.contacted).length
+        total: bills.length,
+        urgent: bills.filter(b => b.priority === 'RED').length,
+        contacted: bills.filter(b => b.contacted).length
       };
+
+      if (loading) {
+        return (
+          <div style={{minHeight: '100vh', background: 'linear-gradient(135deg, #0F172A 0%, #581C87 50%, #0F172A 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+            <div style={{textAlign: 'center', color: 'white'}}>
+              <div className="spinner" style={{width: '48px', height: '48px', border: '4px solid rgba(255,255,255,0.2)', borderTopColor: '#8B5CF6', borderRadius: '50%', margin: '0 auto 16px'}}></div>
+              <p style={{margin: 0, fontSize: '18px'}}>Loading bills from Google Sheet...</p>
+            </div>
+          </div>
+        );
+      }
+
+      if (error) {
+        return (
+          <div style={{minHeight: '100vh', background: 'linear-gradient(135deg, #0F172A 0%, #581C87 50%, #0F172A 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+            <div style={{textAlign: 'center', color: 'white', padding: '24px'}}>
+              <p style={{fontSize: '48px', margin: '0 0 16px 0'}}>⚠️</p>
+              <p style={{margin: '0 0 16px 0', fontSize: '18px'}}>{error}</p>
+              <button onClick={fetchData} style={{padding: '12px 24px', background: '#8B5CF6', border: 'none', borderRadius: '8px', color: 'white', fontWeight: '600', cursor: 'pointer'}}>
+                Try Again
+              </button>
+            </div>
+          </div>
+        );
+      }
 
       return (
         <div style={{minHeight: '100vh', background: 'linear-gradient(135deg, #0F172A 0%, #581C87 50%, #0F172A 100%)'}}>
@@ -75,9 +160,19 @@
                   <p style={{margin: 0, fontSize: '14px', color: 'rgba(216, 180, 254, 0.7)'}}>Track bills, take action, make change</p>
                 </div>
               </div>
-              <div style={{textAlign: 'right'}}>
-                <p style={{margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.5)'}}>Last updated</p>
-                <p style={{margin: 0, color: 'white', fontWeight: '500'}}>January 28, 2026</p>
+              <div style={{display: 'flex', alignItems: 'center', gap: '16px'}}>
+                <button
+                  onClick={fetchData}
+                  style={{padding: '8px 16px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: 'white', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'}}
+                >
+                  🔄 Refresh
+                </button>
+                <div style={{textAlign: 'right'}}>
+                  <p style={{margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.5)'}}>Live from Google Sheet</p>
+                  <p style={{margin: 0, color: 'white', fontWeight: '500', fontSize: '14px'}}>
+                    {lastUpdated ? lastUpdated.toLocaleTimeString() : ''}
+                  </p>
+                </div>
               </div>
             </div>
           </header>
@@ -131,7 +226,7 @@
               {filteredBills.length === 0 && (
                 <div style={{textAlign: 'center', padding: '48px', color: 'rgba(255,255,255,0.5)'}}>
                   <p style={{fontSize: '48px', margin: '0 0 16px 0'}}>🔍</p>
-                  <p>No bills match your search</p>
+                  <p>{bills.length === 0 ? 'No bills in spreadsheet yet' : 'No bills match your search'}</p>
                 </div>
               )}
             </div>
@@ -142,7 +237,7 @@
 
           {/* Footer */}
           <footer style={{textAlign: 'center', padding: '24px', color: 'rgba(255,255,255,0.3)', fontSize: '14px'}}>
-            Progressive Issue Tracker MVP • Built for civic engagement
+            Progressive Issue Tracker • Data synced from Google Sheets
           </footer>
         </div>
       );
@@ -161,8 +256,8 @@
     }
 
     function BillCard({ bill, onClick }) {
-      const priority = priorityStyles[bill.priority];
-      const level = levelStyles[bill.level];
+      const priority = priorityStyles[bill.priority] || priorityStyles.GREEN;
+      const level = levelStyles[bill.level] || levelStyles.Federal;
 
       return (
         <div
@@ -186,7 +281,7 @@
               <div style={{display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '14px', color: 'rgba(255,255,255,0.5)'}}>
                 <span>📍 {bill.status}</span>
                 {bill.actionDeadline && <span>📅 Deadline: {bill.actionDeadline}</span>}
-                <span>👥 {bill.repsToContact}</span>
+                {bill.repsToContact && <span>👥 {bill.repsToContact}</span>}
               </div>
             </div>
             <span style={{color: 'rgba(255,255,255,0.3)', fontSize: '24px'}}>→</span>
@@ -196,7 +291,7 @@
     }
 
     function Modal({ bill, onClose }) {
-      const priority = priorityStyles[bill.priority];
+      const priority = priorityStyles[bill.priority] || priorityStyles.GREEN;
 
       return (
         <div
@@ -233,7 +328,7 @@
               <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px'}}>
                 <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px'}}>
                   <p style={{margin: '0 0 4px 0', fontSize: '12px', color: 'rgba(255,255,255,0.5)'}}>📍 Current Status</p>
-                  <p style={{margin: 0, fontWeight: '600', color: 'white'}}>{bill.status}</p>
+                  <p style={{margin: 0, fontWeight: '600', color: 'white'}}>{bill.status || 'Not specified'}</p>
                 </div>
                 <div style={{background: bill.priority === 'RED' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', border: bill.priority === 'RED' ? '1px solid rgba(239, 68, 68, 0.3)' : 'none'}}>
                   <p style={{margin: '0 0 4px 0', fontSize: '12px', color: bill.priority === 'RED' ? '#FCA5A5' : 'rgba(255,255,255,0.5)'}}>📅 Action Deadline</p>
@@ -242,14 +337,16 @@
               </div>
 
               {/* Reps */}
-              <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px'}}>
-                <p style={{margin: '0 0 12px 0', fontWeight: '600', color: 'white'}}>👥 Representatives to Contact</p>
-                <div style={{display: 'flex', flexWrap: 'wrap', gap: '8px'}}>
-                  {bill.repsToContact.split(', ').map(rep => (
-                    <span key={rep} style={{padding: '8px 14px', background: 'rgba(139, 92, 246, 0.2)', color: '#C4B5FD', borderRadius: '12px', fontSize: '14px', fontWeight: '500'}}>{rep}</span>
-                  ))}
+              {bill.repsToContact && (
+                <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px'}}>
+                  <p style={{margin: '0 0 12px 0', fontWeight: '600', color: 'white'}}>👥 Representatives to Contact</p>
+                  <div style={{display: 'flex', flexWrap: 'wrap', gap: '8px'}}>
+                    {bill.repsToContact.split(', ').map(rep => (
+                      <span key={rep} style={{padding: '8px 14px', background: 'rgba(139, 92, 246, 0.2)', color: '#C4B5FD', borderRadius: '12px', fontSize: '14px', fontWeight: '500'}}>{rep}</span>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Contact status */}
               <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
@@ -261,6 +358,14 @@
                   {bill.contacted ? '✅' : '⏳'}
                 </div>
               </div>
+
+              {/* Notes */}
+              {bill.notes && (
+                <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px'}}>
+                  <p style={{margin: '0 0 8px 0', fontWeight: '600', color: 'white'}}>📝 Notes</p>
+                  <p style={{margin: 0, color: 'rgba(255,255,255,0.7)'}}>{bill.notes}</p>
+                </div>
+              )}
 
               {/* Actions */}
               <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap'}}>
