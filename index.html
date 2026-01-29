@@ -21,8 +21,9 @@
   <script type="text/babel" data-presets="react">
     const { useState, useEffect } = React;
 
-    // Google Sheet CSV URL
-    const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vReL4NXX8B0GjIgAiyWqYvq6fUj0Lba_XxJBWUCcD52sFaS00-vUoRzCvYSaRsjRCHJXBd9hg9Eac5u/pub?output=csv';
+    // Google Sheet CSV URLs
+    const BILLS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vReL4NXX8B0GjIgAiyWqYvq6fUj0Lba_XxJBWUCcD52sFaS00-vUoRzCvYSaRsjRCHJXBd9hg9Eac5u/pub?output=csv';
+    const REPS_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vReL4NXX8B0GjIgAiyWqYvq6fUj0Lba_XxJBWUCcD52sFaS00-vUoRzCvYSaRsjRCHJXBd9hg9Eac5u/pub?gid=288510828&single=true&output=csv';
 
     const priorityStyles = {
       RED: { bg: '#FEE2E2', text: '#DC2626', label: '🔴 Urgent', gradient: 'linear-gradient(135deg, #EF4444, #E11D48)' },
@@ -36,7 +37,7 @@
       Local: { bg: '#CCFBF1', text: '#0D9488' }
     };
 
-    // Parse priority from spreadsheet (handles emoji format like "🔴 RED")
+    // Parse priority from spreadsheet
     function parsePriority(value) {
       if (!value) return 'GREEN';
       const upper = value.toUpperCase();
@@ -52,8 +53,28 @@
       return lower === 'yes' || lower === 'true' || lower === 'y';
     }
 
+    // Format contact URL
+    function formatContactUrl(info) {
+      if (!info) return null;
+      // Extract URL portion (before any phone/pipe separator)
+      let url = info.split('|')[0].trim();
+      // Remove any phone numbers
+      url = url.replace(/\(\d{3}\)\s*\d{3}-\d{4}/, '').trim();
+      // Add https if needed
+      if (url && !url.startsWith('http') && !url.includes('@')) {
+        url = 'https://' + url;
+      }
+      return url;
+    }
+
+    // Check if contact is email
+    function isEmail(info) {
+      return info && info.includes('@');
+    }
+
     function App() {
       const [bills, setBills] = useState([]);
+      const [reps, setReps] = useState([]);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [lastUpdated, setLastUpdated] = useState(null);
@@ -61,18 +82,21 @@
       const [levelFilter, setLevelFilter] = useState('All');
       const [priorityFilter, setPriorityFilter] = useState('All');
       const [selectedBill, setSelectedBill] = useState(null);
+      const [showContacts, setShowContacts] = useState(false);
 
-      // Fetch data from Google Sheet
       useEffect(() => {
         fetchData();
       }, []);
 
       const fetchData = () => {
         setLoading(true);
-        fetch(SHEET_URL)
-          .then(response => response.text())
-          .then(csvText => {
-            Papa.parse(csvText, {
+        setError(null);
+
+        // Fetch bills (required)
+        fetch(BILLS_URL)
+          .then(r => r.text())
+          .then(billsCsv => {
+            Papa.parse(billsCsv, {
               header: true,
               skipEmptyLines: true,
               complete: (results) => {
@@ -89,22 +113,58 @@
                   repsToContact: row['Reps to Contact'] || '',
                   contacted: parseContacted(row['Contacted?']),
                   notes: row['Outcome/Notes'] || ''
-                })).filter(bill => bill.billIssue); // Filter out empty rows
-
+                })).filter(bill => bill.billIssue);
                 setBills(parsedBills);
                 setLastUpdated(new Date());
                 setLoading(false);
-              },
-              error: (err) => {
-                setError('Failed to parse spreadsheet data');
-                setLoading(false);
               }
             });
+
+            // Try to fetch reps (optional - won't block if it fails)
+            fetch(REPS_URL)
+              .then(r => r.text())
+              .then(repsCsv => {
+                Papa.parse(repsCsv, {
+                  header: true,
+                  skipEmptyLines: true,
+                  complete: (repsResults) => {
+                    const parsedReps = repsResults.data.map((row, index) => ({
+                      id: index + 1,
+                      name: row['Name'] || '',
+                      level: row['Level'] || '',
+                      contactMethod: row['Contact Method'] || '',
+                      contactInfo: row['Contact Info'] || '',
+                      notes: row['Notes'] || ''
+                    })).filter(rep => rep.name);
+                    setReps(parsedReps);
+                  }
+                });
+              })
+              .catch(err => console.log('Reps sheet not available:', err));
           })
           .catch(err => {
+            console.error('Fetch error:', err);
             setError('Failed to fetch data from Google Sheet');
             setLoading(false);
           });
+      };
+
+      // Find matching reps for a bill
+      const getMatchingReps = (bill) => {
+        if (!bill.repsToContact) return [];
+        const repNames = bill.repsToContact.split(',').map(n => n.trim().toLowerCase());
+
+        return reps.filter(rep => {
+          const repNameLower = rep.name.toLowerCase();
+          return repNames.some(name =>
+            repNameLower.includes(name) || name.includes(repNameLower.split(' ').pop())
+          );
+        });
+      };
+
+      // Get reps by level
+      const getRepsByLevel = (level) => {
+        return reps.filter(rep => rep.level === level);
       };
 
       const filteredBills = bills.filter(bill => {
@@ -126,7 +186,7 @@
           <div style={{minHeight: '100vh', background: 'linear-gradient(135deg, #0F172A 0%, #581C87 50%, #0F172A 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
             <div style={{textAlign: 'center', color: 'white'}}>
               <div className="spinner" style={{width: '48px', height: '48px', border: '4px solid rgba(255,255,255,0.2)', borderTopColor: '#8B5CF6', borderRadius: '50%', margin: '0 auto 16px'}}></div>
-              <p style={{margin: 0, fontSize: '18px'}}>Loading bills from Google Sheet...</p>
+              <p style={{margin: 0, fontSize: '18px'}}>Loading from Google Sheets...</p>
             </div>
           </div>
         );
@@ -233,7 +293,16 @@
           </main>
 
           {/* Modal */}
-          {selectedBill && <Modal bill={selectedBill} onClose={() => setSelectedBill(null)} />}
+          {selectedBill && (
+            <Modal
+              bill={selectedBill}
+              onClose={() => { setSelectedBill(null); setShowContacts(false); }}
+              showContacts={showContacts}
+              setShowContacts={setShowContacts}
+              matchingReps={getMatchingReps(selectedBill)}
+              levelReps={getRepsByLevel(selectedBill.level)}
+            />
+          )}
 
           {/* Footer */}
           <footer style={{textAlign: 'center', padding: '24px', color: 'rgba(255,255,255,0.3)', fontSize: '14px'}}>
@@ -268,16 +337,13 @@
         >
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px'}}>
             <div style={{flex: 1, minWidth: 0}}>
-              {/* Tags */}
               <div style={{display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px'}}>
                 <span style={{padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '500', background: level.bg, color: level.text}}>{bill.level}</span>
                 <span style={{padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '500', background: priority.bg, color: priority.text}}>{priority.label}</span>
                 {bill.contacted && <span style={{padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '500', background: 'rgba(16, 185, 129, 0.2)', color: '#34D399'}}>✓ Contacted</span>}
               </div>
-              {/* Title */}
               <h3 style={{margin: '0 0 4px 0', fontSize: '20px', fontWeight: 'bold', color: 'white'}}>{bill.billIssue}</h3>
               <p style={{margin: '0 0 12px 0', color: 'rgba(255,255,255,0.7)'}}>{bill.description}</p>
-              {/* Meta */}
               <div style={{display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '14px', color: 'rgba(255,255,255,0.5)'}}>
                 <span>📍 {bill.status}</span>
                 {bill.actionDeadline && <span>📅 Deadline: {bill.actionDeadline}</span>}
@@ -290,8 +356,51 @@
       );
     }
 
-    function Modal({ bill, onClose }) {
+    function RepContactCard({ rep }) {
+      const contactUrl = formatContactUrl(rep.contactInfo);
+      const email = isEmail(rep.contactInfo) ? rep.contactInfo : null;
+
+      return (
+        <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '16px', marginBottom: '12px'}}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap'}}>
+            <div style={{flex: 1, minWidth: '200px'}}>
+              <p style={{margin: '0 0 4px 0', fontWeight: '600', color: 'white', fontSize: '16px'}}>{rep.name}</p>
+              <p style={{margin: '0 0 8px 0', fontSize: '12px', color: 'rgba(255,255,255,0.5)'}}>{rep.level} • {rep.notes}</p>
+              <p style={{margin: 0, fontSize: '13px', color: 'rgba(255,255,255,0.6)'}}>{rep.contactMethod}</p>
+            </div>
+            <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+              {email ? (
+                <a
+                  href={`mailto:${email}?subject=Constituent%20Message`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{padding: '10px 16px', background: 'linear-gradient(135deg, #8B5CF6, #D946EF)', borderRadius: '8px', color: 'white', textDecoration: 'none', fontSize: '14px', fontWeight: '500', display: 'inline-flex', alignItems: 'center', gap: '6px'}}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  ✉️ Email
+                </a>
+              ) : contactUrl ? (
+                <a
+                  href={contactUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{padding: '10px 16px', background: 'linear-gradient(135deg, #8B5CF6, #D946EF)', borderRadius: '8px', color: 'white', textDecoration: 'none', fontSize: '14px', fontWeight: '500', display: 'inline-flex', alignItems: 'center', gap: '6px'}}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  🌐 Contact Form
+                </a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function Modal({ bill, onClose, showContacts, setShowContacts, matchingReps, levelReps }) {
       const priority = priorityStyles[bill.priority] || priorityStyles.GREEN;
+
+      // Use matching reps if found, otherwise fall back to all reps at that level
+      const repsToShow = matchingReps.length > 0 ? matchingReps : levelReps;
 
       return (
         <div
@@ -336,18 +445,6 @@
                 </div>
               </div>
 
-              {/* Reps */}
-              {bill.repsToContact && (
-                <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px'}}>
-                  <p style={{margin: '0 0 12px 0', fontWeight: '600', color: 'white'}}>👥 Representatives to Contact</p>
-                  <div style={{display: 'flex', flexWrap: 'wrap', gap: '8px'}}>
-                    {bill.repsToContact.split(', ').map(rep => (
-                      <span key={rep} style={{padding: '8px 14px', background: 'rgba(139, 92, 246, 0.2)', color: '#C4B5FD', borderRadius: '12px', fontSize: '14px', fontWeight: '500'}}>{rep}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Contact status */}
               <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                 <div>
@@ -367,15 +464,43 @@
                 </div>
               )}
 
-              {/* Actions */}
-              <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap'}}>
-                <button style={{flex: 1, padding: '14px 20px', background: 'linear-gradient(135deg, #8B5CF6, #D946EF)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '600', fontSize: '14px', cursor: 'pointer', minWidth: '200px'}}>
-                  👥 Contact Representatives
-                </button>
-                <button style={{flex: 1, padding: '14px 20px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '600', fontSize: '14px', cursor: 'pointer', minWidth: '200px'}}>
-                  ✅ Mark as Contacted
-                </button>
-              </div>
+              {/* Contact Representatives Section */}
+              {showContacts ? (
+                <div>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px'}}>
+                    <h3 style={{margin: 0, color: 'white', fontSize: '18px'}}>👥 Contact Your Representatives</h3>
+                    <button
+                      onClick={() => setShowContacts(false)}
+                      style={{background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '8px', padding: '8px 12px', color: 'white', fontSize: '13px', cursor: 'pointer'}}
+                    >
+                      ← Back
+                    </button>
+                  </div>
+                  {repsToShow.length > 0 ? (
+                    repsToShow.map(rep => <RepContactCard key={rep.id} rep={rep} />)
+                  ) : (
+                    <p style={{color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: '20px'}}>No matching representatives found</p>
+                  )}
+                </div>
+              ) : (
+                /* Action Buttons */
+                <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap'}}>
+                  <button
+                    onClick={() => setShowContacts(true)}
+                    style={{flex: 1, padding: '14px 20px', background: 'linear-gradient(135deg, #8B5CF6, #D946EF)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '600', fontSize: '14px', cursor: 'pointer', minWidth: '200px'}}
+                  >
+                    👥 Contact Representatives
+                  </button>
+                  <a
+                    href={`https://docs.google.com/spreadsheets/d/1lnYpDv9wvZP0VQT9nLc-Q5tWPvCe1uF1p5tYqGnGklU/edit`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{flex: 1, padding: '14px 20px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '600', fontSize: '14px', cursor: 'pointer', minWidth: '200px', textAlign: 'center', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+                  >
+                    ✅ Mark as Contacted
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>
