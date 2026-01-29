@@ -5,386 +5,270 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Progressive Issue Tracker</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"></script>
   <style>
+    * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
-    .custom-scrollbar::-webkit-scrollbar { width: 8px; }
-    .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); border-radius: 4px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
   </style>
 </head>
 <body>
   <div id="root"></div>
 
-  <script type="text/babel">
-    const { useState, useMemo } = React;
-    const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } = Recharts;
+  <script type="text/babel" data-presets="react">
+    const { useState } = React;
 
-    // Icon components (inline SVGs)
-    const Icons = {
-      Search: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>,
-      Filter: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>,
-      X: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>,
-      Calendar: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
-      Users: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
-      AlertCircle: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-      CheckCircle: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-      Clock: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-      ChevronRight: () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>,
-      Activity: () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>,
-    };
-
-    // Data from spreadsheet
+    // Bill data
     const billsData = [
-      { id: 1, dateAdded: '1/28/2026', level: 'Federal', billIssue: 'HR 1234', description: 'Climate Action Bill', status: 'Committee Hearing', actionDeadline: '2/5/2026', priority: 'RED', takeAction: false, repsToContact: 'Matsui, Padilla, Schiff', contacted: false, notes: '' },
-      { id: 2, dateAdded: '1/27/2026', level: 'State', billIssue: 'SB 500', description: 'Tenant Protection Act', status: 'Floor Vote Scheduled', actionDeadline: '2/1/2026', priority: 'RED', takeAction: false, repsToContact: 'Ashby, Krell', contacted: true, notes: 'Emailed 1/27' },
-      { id: 3, dateAdded: '1/26/2026', level: 'Local', billIssue: 'City Budget', description: 'Homeless services funding', status: 'Council Agenda 2/6', actionDeadline: '2/5/2026', priority: 'YELLOW', takeAction: false, repsToContact: 'McCarty, Pluckebaum', contacted: false, notes: '' },
-      { id: 4, dateAdded: '1/25/2026', level: 'Federal', billIssue: 'HR 5678', description: 'Healthcare expansion', status: 'Introduced', actionDeadline: null, priority: 'GREEN', takeAction: false, repsToContact: 'Watch only', contacted: false, notes: 'Monitor progress' },
-      { id: 5, dateAdded: '1/24/2026', level: 'State', billIssue: 'AB 789', description: 'Renewable Energy Standards', status: 'In Committee', actionDeadline: '2/10/2026', priority: 'YELLOW', takeAction: true, repsToContact: 'Aguiar-Curry, Berman', contacted: false, notes: '' },
-      { id: 6, dateAdded: '1/23/2026', level: 'Federal', billIssue: 'S 234', description: 'Voting Rights Act Update', status: 'Floor Vote Pending', actionDeadline: '1/30/2026', priority: 'RED', takeAction: true, repsToContact: 'Padilla, Butler', contacted: true, notes: 'Called offices 1/23' }
+      { id: 1, dateAdded: '1/28/2026', level: 'Federal', billIssue: 'HR 1234', description: 'Climate Action Bill', status: 'Committee Hearing', actionDeadline: '2/5/2026', priority: 'RED', repsToContact: 'Matsui, Padilla, Schiff', contacted: false, notes: '' },
+      { id: 2, dateAdded: '1/27/2026', level: 'State', billIssue: 'SB 500', description: 'Tenant Protection Act', status: 'Floor Vote Scheduled', actionDeadline: '2/1/2026', priority: 'RED', repsToContact: 'Ashby, Krell', contacted: true, notes: 'Emailed 1/27' },
+      { id: 3, dateAdded: '1/26/2026', level: 'Local', billIssue: 'City Budget', description: 'Homeless services funding', status: 'Council Agenda 2/6', actionDeadline: '2/5/2026', priority: 'YELLOW', repsToContact: 'McCarty, Pluckebaum', contacted: false, notes: '' },
+      { id: 4, dateAdded: '1/25/2026', level: 'Federal', billIssue: 'HR 5678', description: 'Healthcare expansion', status: 'Introduced', actionDeadline: null, priority: 'GREEN', repsToContact: 'Watch only', contacted: false, notes: 'Monitor progress' },
+      { id: 5, dateAdded: '1/24/2026', level: 'State', billIssue: 'AB 789', description: 'Renewable Energy Standards', status: 'In Committee', actionDeadline: '2/10/2026', priority: 'YELLOW', repsToContact: 'Aguiar-Curry, Berman', contacted: false, notes: '' },
+      { id: 6, dateAdded: '1/23/2026', level: 'Federal', billIssue: 'S 234', description: 'Voting Rights Act Update', status: 'Floor Vote Pending', actionDeadline: '1/30/2026', priority: 'RED', repsToContact: 'Padilla, Butler', contacted: true, notes: 'Called offices 1/23' }
     ];
 
-    const priorityColors = {
-      RED: { bg: '#FEE2E2', text: '#DC2626', gradient: 'from-red-500 to-rose-600' },
-      YELLOW: { bg: '#FEF3C7', text: '#D97706', gradient: 'from-amber-400 to-orange-500' },
-      GREEN: { bg: '#D1FAE5', text: '#059669', gradient: 'from-emerald-400 to-teal-500' }
+    const priorityStyles = {
+      RED: { bg: '#FEE2E2', text: '#DC2626', label: '🔴 Urgent', gradient: 'linear-gradient(135deg, #EF4444, #E11D48)' },
+      YELLOW: { bg: '#FEF3C7', text: '#D97706', label: '🟡 Important', gradient: 'linear-gradient(135deg, #F59E0B, #EA580C)' },
+      GREEN: { bg: '#D1FAE5', text: '#059669', label: '🟢 Monitor', gradient: 'linear-gradient(135deg, #10B981, #14B8A6)' }
     };
 
-    const levelColors = {
+    const levelStyles = {
       Federal: { bg: '#DBEAFE', text: '#1D4ED8' },
       State: { bg: '#F3E8FF', text: '#7C3AED' },
       Local: { bg: '#CCFBF1', text: '#0D9488' }
     };
-
-    const CHART_COLORS = ['#3B82F6', '#8B5CF6', '#14B8A6', '#F59E0B', '#EF4444', '#10B981'];
 
     function App() {
       const [searchTerm, setSearchTerm] = useState('');
       const [levelFilter, setLevelFilter] = useState('All');
       const [priorityFilter, setPriorityFilter] = useState('All');
       const [selectedBill, setSelectedBill] = useState(null);
-      const [showFilters, setShowFilters] = useState(false);
 
-      const filteredBills = useMemo(() => {
-        return billsData.filter(bill => {
-          const matchesSearch = bill.billIssue.toLowerCase().includes(searchTerm.toLowerCase()) || bill.description.toLowerCase().includes(searchTerm.toLowerCase());
-          const matchesLevel = levelFilter === 'All' || bill.level === levelFilter;
-          const matchesPriority = priorityFilter === 'All' || bill.priority === priorityFilter;
-          return matchesSearch && matchesLevel && matchesPriority;
-        });
-      }, [searchTerm, levelFilter, priorityFilter]);
-
-      const levelChartData = [
-        { name: 'Federal', value: billsData.filter(b => b.level === 'Federal').length },
-        { name: 'State', value: billsData.filter(b => b.level === 'State').length },
-        { name: 'Local', value: billsData.filter(b => b.level === 'Local').length }
-      ];
-
-      const priorityChartData = [
-        { name: 'Urgent', value: billsData.filter(b => b.priority === 'RED').length, color: '#EF4444' },
-        { name: 'Important', value: billsData.filter(b => b.priority === 'YELLOW').length, color: '#F59E0B' },
-        { name: 'Monitor', value: billsData.filter(b => b.priority === 'GREEN').length, color: '#10B981' }
-      ];
+      const filteredBills = billsData.filter(bill => {
+        const matchesSearch = bill.billIssue.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                              bill.description.toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesLevel = levelFilter === 'All' || bill.level === levelFilter;
+        const matchesPriority = priorityFilter === 'All' || bill.priority === priorityFilter;
+        return matchesSearch && matchesLevel && matchesPriority;
+      });
 
       const stats = {
         total: billsData.length,
         urgent: billsData.filter(b => b.priority === 'RED').length,
-        actionNeeded: billsData.filter(b => b.takeAction && !b.contacted).length,
         contacted: billsData.filter(b => b.contacted).length
       };
 
       return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <div style={{minHeight: '100vh', background: 'linear-gradient(135deg, #0F172A 0%, #581C87 50%, #0F172A 100%)'}}>
           {/* Header */}
-          <header className="bg-black/30 backdrop-blur-lg border-b border-white/10">
-            <div className="max-w-7xl mx-auto px-4 py-6">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/30">
-                    <Icons.Activity />
-                  </div>
-                  <div>
-                    <h1 className="text-2xl font-bold text-white">Progressive Issue Tracker</h1>
-                    <p className="text-purple-200/70 text-sm">Track bills, take action, make change</p>
-                  </div>
+          <header style={{background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(10px)', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '24px 16px'}}>
+            <div style={{maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px'}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: '16px'}}>
+                <div style={{width: '48px', height: '48px', borderRadius: '12px', background: 'linear-gradient(135deg, #8B5CF6, #D946EF)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 30px rgba(139, 92, 246, 0.3)'}}>
+                  <span style={{fontSize: '24px'}}>⚡</span>
                 </div>
-                <div className="text-right">
-                  <p className="text-white/60 text-sm">Last updated</p>
-                  <p className="text-white font-medium">January 28, 2026</p>
+                <div>
+                  <h1 style={{margin: 0, fontSize: '24px', fontWeight: 'bold', color: 'white'}}>Progressive Issue Tracker</h1>
+                  <p style={{margin: 0, fontSize: '14px', color: 'rgba(216, 180, 254, 0.7)'}}>Track bills, take action, make change</p>
                 </div>
+              </div>
+              <div style={{textAlign: 'right'}}>
+                <p style={{margin: 0, fontSize: '12px', color: 'rgba(255,255,255,0.5)'}}>Last updated</p>
+                <p style={{margin: 0, color: 'white', fontWeight: '500'}}>January 28, 2026</p>
               </div>
             </div>
           </header>
 
-          <main className="max-w-7xl mx-auto px-4 py-8">
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-              <StatCard icon={<Icons.AlertCircle />} label="Active Issues" value={stats.total} color="from-blue-500 to-cyan-500" />
-              <StatCard icon={<Icons.Clock />} label="Urgent" value={stats.urgent} color="from-red-500 to-rose-500" />
-              <StatCard icon={<Icons.Users />} label="Action Needed" value={stats.actionNeeded} color="from-amber-500 to-orange-500" />
-              <StatCard icon={<Icons.CheckCircle />} label="Contacted" value={stats.contacted} color="from-emerald-500 to-teal-500" />
+          <main style={{maxWidth: '1200px', margin: '0 auto', padding: '32px 16px'}}>
+            {/* Stats */}
+            <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px', marginBottom: '32px'}}>
+              <StatCard emoji="📋" label="Active Issues" value={stats.total} color="#3B82F6" />
+              <StatCard emoji="🔴" label="Urgent" value={stats.urgent} color="#EF4444" />
+              <StatCard emoji="✅" label="Contacted" value={stats.contacted} color="#10B981" />
             </div>
 
-            {/* Charts */}
-            <div className="grid md:grid-cols-3 gap-6 mb-8">
-              <ChartCard title="By Level">
-                <ResponsiveContainer width="100%" height={180}>
-                  <PieChart>
-                    <Pie data={levelChartData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={5} dataKey="value">
-                      {levelChartData.map((entry, index) => <Cell key={entry.name} fill={CHART_COLORS[index]} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ background: 'rgba(0,0,0,0.8)', border: 'none', borderRadius: '8px', color: 'white' }} />
-                    <Legend formatter={(value) => <span style={{color: 'rgba(255,255,255,0.8)', fontSize: '12px'}}>{value}</span>} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
-              <ChartCard title="By Priority">
-                <ResponsiveContainer width="100%" height={180}>
-                  <PieChart>
-                    <Pie data={priorityChartData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={5} dataKey="value">
-                      {priorityChartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ background: 'rgba(0,0,0,0.8)', border: 'none', borderRadius: '8px', color: 'white' }} />
-                    <Legend formatter={(value) => <span style={{color: 'rgba(255,255,255,0.8)', fontSize: '12px'}}>{value}</span>} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </ChartCard>
-
-              <ChartCard title="Quick Stats">
-                <div className="space-y-3 pt-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-white/70">Contacted</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-500 rounded-full" style={{width: `${(stats.contacted/stats.total)*100}%`}}></div>
-                      </div>
-                      <span className="text-white text-sm">{Math.round((stats.contacted/stats.total)*100)}%</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-white/70">Urgent</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full bg-red-500 rounded-full" style={{width: `${(stats.urgent/stats.total)*100}%`}}></div>
-                      </div>
-                      <span className="text-white text-sm">{Math.round((stats.urgent/stats.total)*100)}%</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-white/70">Need Action</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full bg-amber-500 rounded-full" style={{width: `${(stats.actionNeeded/stats.total)*100}%`}}></div>
-                      </div>
-                      <span className="text-white text-sm">{Math.round((stats.actionNeeded/stats.total)*100)}%</span>
-                    </div>
-                  </div>
-                </div>
-              </ChartCard>
-            </div>
-
-            {/* Search and Filters */}
-            <div className="bg-white/5 backdrop-blur-lg rounded-2xl border border-white/10 p-4 mb-6">
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40"><Icons.Search /></div>
-                  <input
-                    type="text"
-                    placeholder="Search bills and issues..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/10 rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  />
-                </div>
-                <button
-                  onClick={() => setShowFilters(!showFilters)}
-                  className={`flex items-center gap-2 px-4 py-3 rounded-xl border transition-all ${showFilters ? 'bg-violet-500 border-violet-500 text-white' : 'bg-white/10 border-white/10 text-white/70 hover:bg-white/20'}`}
+            {/* Search & Filters */}
+            <div style={{background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', padding: '16px', marginBottom: '24px'}}>
+              <div style={{display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center'}}>
+                <input
+                  type="text"
+                  placeholder="🔍 Search bills..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{flex: '1 1 200px', padding: '12px 16px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white', fontSize: '14px', outline: 'none'}}
+                />
+                <select
+                  value={levelFilter}
+                  onChange={(e) => setLevelFilter(e.target.value)}
+                  style={{padding: '12px 16px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white', fontSize: '14px', outline: 'none', cursor: 'pointer'}}
                 >
-                  <Icons.Filter />
-                  Filters
-                </button>
+                  <option value="All" style={{background: '#1E293B'}}>All Levels</option>
+                  <option value="Federal" style={{background: '#1E293B'}}>Federal</option>
+                  <option value="State" style={{background: '#1E293B'}}>State</option>
+                  <option value="Local" style={{background: '#1E293B'}}>Local</option>
+                </select>
+                <select
+                  value={priorityFilter}
+                  onChange={(e) => setPriorityFilter(e.target.value)}
+                  style={{padding: '12px 16px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: 'white', fontSize: '14px', outline: 'none', cursor: 'pointer'}}
+                >
+                  <option value="All" style={{background: '#1E293B'}}>All Priorities</option>
+                  <option value="RED" style={{background: '#1E293B'}}>🔴 Urgent</option>
+                  <option value="YELLOW" style={{background: '#1E293B'}}>🟡 Important</option>
+                  <option value="GREEN" style={{background: '#1E293B'}}>🟢 Monitor</option>
+                </select>
               </div>
-
-              {showFilters && (
-                <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-white/10">
-                  <div className="flex items-center gap-2">
-                    <span className="text-white/50 text-sm">Level:</span>
-                    <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
-                      <option value="All" className="bg-slate-800">All</option>
-                      <option value="Federal" className="bg-slate-800">Federal</option>
-                      <option value="State" className="bg-slate-800">State</option>
-                      <option value="Local" className="bg-slate-800">Local</option>
-                    </select>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-white/50 text-sm">Priority:</span>
-                    <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
-                      <option value="All" className="bg-slate-800">All</option>
-                      <option value="RED" className="bg-slate-800">🔴 Urgent</option>
-                      <option value="YELLOW" className="bg-slate-800">🟡 Important</option>
-                      <option value="GREEN" className="bg-slate-800">🟢 Monitor</option>
-                    </select>
-                  </div>
-                  {(levelFilter !== 'All' || priorityFilter !== 'All') && (
-                    <button onClick={() => { setLevelFilter('All'); setPriorityFilter('All'); }} className="flex items-center gap-1 px-3 py-2 text-sm text-violet-300 hover:text-white transition-colors">
-                      <Icons.X /> Clear
-                    </button>
-                  )}
-                </div>
-              )}
             </div>
 
             {/* Bills List */}
-            <div className="space-y-4">
+            <div style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
               {filteredBills.map(bill => (
                 <BillCard key={bill.id} bill={bill} onClick={() => setSelectedBill(bill)} />
               ))}
               {filteredBills.length === 0 && (
-                <div className="text-center py-12 text-white/50">
-                  <div className="w-12 h-12 mx-auto mb-4 opacity-50"><Icons.AlertCircle /></div>
-                  <p>No bills match your search criteria</p>
+                <div style={{textAlign: 'center', padding: '48px', color: 'rgba(255,255,255,0.5)'}}>
+                  <p style={{fontSize: '48px', margin: '0 0 16px 0'}}>🔍</p>
+                  <p>No bills match your search</p>
                 </div>
               )}
             </div>
           </main>
 
           {/* Modal */}
-          {selectedBill && <BillDetailModal bill={selectedBill} onClose={() => setSelectedBill(null)} />}
+          {selectedBill && <Modal bill={selectedBill} onClose={() => setSelectedBill(null)} />}
 
           {/* Footer */}
-          <footer className="text-center py-6 text-white/30 text-sm">
+          <footer style={{textAlign: 'center', padding: '24px', color: 'rgba(255,255,255,0.3)', fontSize: '14px'}}>
             Progressive Issue Tracker MVP • Built for civic engagement
           </footer>
         </div>
       );
     }
 
-    function StatCard({ icon, label, value, color }) {
+    function StatCard({ emoji, label, value, color }) {
       return (
-        <div className="bg-white/5 backdrop-blur-lg rounded-2xl border border-white/10 p-4 hover:bg-white/10 transition-all">
-          <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center mb-3 shadow-lg text-white`}>
-            {icon}
+        <div style={{background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', padding: '20px', transition: 'all 0.2s'}}>
+          <div style={{width: '40px', height: '40px', borderRadius: '12px', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', fontSize: '20px'}}>
+            {emoji}
           </div>
-          <p className="text-3xl font-bold text-white mb-1">{value}</p>
-          <p className="text-white/50 text-sm">{label}</p>
-        </div>
-      );
-    }
-
-    function ChartCard({ title, children }) {
-      return (
-        <div className="bg-white/5 backdrop-blur-lg rounded-2xl border border-white/10 p-4">
-          <h3 className="text-white font-semibold mb-4">{title}</h3>
-          {children}
+          <p style={{margin: 0, fontSize: '32px', fontWeight: 'bold', color: 'white'}}>{value}</p>
+          <p style={{margin: '4px 0 0 0', fontSize: '14px', color: 'rgba(255,255,255,0.5)'}}>{label}</p>
         </div>
       );
     }
 
     function BillCard({ bill, onClick }) {
-      const priority = priorityColors[bill.priority];
-      const level = levelColors[bill.level];
+      const priority = priorityStyles[bill.priority];
+      const level = levelStyles[bill.level];
 
       return (
-        <div onClick={onClick} className="bg-white/5 backdrop-blur-lg rounded-2xl border border-white/10 p-5 hover:bg-white/10 hover:border-violet-500/50 transition-all cursor-pointer group">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <span className="px-2 py-1 rounded-lg text-xs font-medium" style={{ background: level.bg, color: level.text }}>{bill.level}</span>
-                <span className="px-2 py-1 rounded-lg text-xs font-medium" style={{ background: priority.bg, color: priority.text }}>
-                  {bill.priority === 'RED' ? '🔴 Urgent' : bill.priority === 'YELLOW' ? '🟡 Important' : '🟢 Monitor'}
-                </span>
-                {bill.contacted && <span className="px-2 py-1 rounded-lg text-xs font-medium bg-emerald-500/20 text-emerald-400">✓ Contacted</span>}
+        <div
+          onClick={onClick}
+          style={{background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', padding: '20px', cursor: 'pointer', transition: 'all 0.2s'}}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.5)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+        >
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px'}}>
+            <div style={{flex: 1, minWidth: 0}}>
+              {/* Tags */}
+              <div style={{display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px'}}>
+                <span style={{padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '500', background: level.bg, color: level.text}}>{bill.level}</span>
+                <span style={{padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '500', background: priority.bg, color: priority.text}}>{priority.label}</span>
+                {bill.contacted && <span style={{padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '500', background: 'rgba(16, 185, 129, 0.2)', color: '#34D399'}}>✓ Contacted</span>}
               </div>
-              <h3 className="text-xl font-bold text-white mb-1">{bill.billIssue}</h3>
-              <p className="text-white/70 mb-3">{bill.description}</p>
-              <div className="flex flex-wrap gap-4 text-sm text-white/50">
-                <span className="flex items-center gap-1"><Icons.Clock /> {bill.status}</span>
-                {bill.actionDeadline && <span className="flex items-center gap-1"><Icons.Calendar /> Deadline: {bill.actionDeadline}</span>}
-                <span className="flex items-center gap-1"><Icons.Users /> {bill.repsToContact}</span>
+              {/* Title */}
+              <h3 style={{margin: '0 0 4px 0', fontSize: '20px', fontWeight: 'bold', color: 'white'}}>{bill.billIssue}</h3>
+              <p style={{margin: '0 0 12px 0', color: 'rgba(255,255,255,0.7)'}}>{bill.description}</p>
+              {/* Meta */}
+              <div style={{display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '14px', color: 'rgba(255,255,255,0.5)'}}>
+                <span>📍 {bill.status}</span>
+                {bill.actionDeadline && <span>📅 Deadline: {bill.actionDeadline}</span>}
+                <span>👥 {bill.repsToContact}</span>
               </div>
             </div>
-            <div className="text-white/30 group-hover:text-violet-400 group-hover:translate-x-1 transition-all flex-shrink-0">
-              <Icons.ChevronRight />
-            </div>
+            <span style={{color: 'rgba(255,255,255,0.3)', fontSize: '24px'}}>→</span>
           </div>
         </div>
       );
     }
 
-    function BillDetailModal({ bill, onClose }) {
-      const priority = priorityColors[bill.priority];
+    function Modal({ bill, onClose }) {
+      const priority = priorityStyles[bill.priority];
 
       return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
-          <div className="bg-slate-900 rounded-3xl border border-white/10 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl custom-scrollbar" onClick={e => e.stopPropagation()}>
+        <div
+          onClick={onClose}
+          style={{position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 50}}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{background: '#0F172A', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.1)', maxWidth: '600px', width: '100%', maxHeight: '90vh', overflow: 'auto', boxShadow: '0 25px 50px rgba(0,0,0,0.5)'}}
+          >
             {/* Header */}
-            <div className={`bg-gradient-to-r ${priority.gradient} p-6 rounded-t-3xl`}>
-              <div className="flex items-start justify-between">
+            <div style={{background: priority.gradient, padding: '24px', borderRadius: '24px 24px 0 0'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'}}>
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-1 rounded-lg text-xs font-medium bg-white/20 text-white">{bill.level}</span>
-                    <span className="px-2 py-1 rounded-lg text-xs font-medium bg-white/20 text-white">Added {bill.dateAdded}</span>
+                  <div style={{display: 'flex', gap: '8px', marginBottom: '8px'}}>
+                    <span style={{padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '500', background: 'rgba(255,255,255,0.2)', color: 'white'}}>{bill.level}</span>
+                    <span style={{padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '500', background: 'rgba(255,255,255,0.2)', color: 'white'}}>Added {bill.dateAdded}</span>
                   </div>
-                  <h2 className="text-3xl font-bold text-white mb-1">{bill.billIssue}</h2>
-                  <p className="text-white/90 text-lg">{bill.description}</p>
+                  <h2 style={{margin: '0 0 4px 0', fontSize: '28px', fontWeight: 'bold', color: 'white'}}>{bill.billIssue}</h2>
+                  <p style={{margin: 0, fontSize: '18px', color: 'rgba(255,255,255,0.9)'}}>{bill.description}</p>
                 </div>
-                <button onClick={onClose} className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white">
-                  <Icons.X />
+                <button
+                  onClick={onClose}
+                  style={{background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', color: 'white', fontSize: '18px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+                >
+                  ✕
                 </button>
               </div>
             </div>
 
             {/* Content */}
-            <div className="p-6 space-y-6">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="bg-white/5 rounded-2xl p-4">
-                  <div className="flex items-center gap-2 mb-1 text-violet-400">
-                    <Icons.Activity />
-                    <span className="text-white/50 text-sm">Current Status</span>
-                  </div>
-                  <p className="text-white font-semibold">{bill.status}</p>
+            <div style={{padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px'}}>
+              {/* Status boxes */}
+              <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px'}}>
+                <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px'}}>
+                  <p style={{margin: '0 0 4px 0', fontSize: '12px', color: 'rgba(255,255,255,0.5)'}}>📍 Current Status</p>
+                  <p style={{margin: 0, fontWeight: '600', color: 'white'}}>{bill.status}</p>
                 </div>
-                <div className={`rounded-2xl p-4 ${bill.priority === 'RED' ? 'bg-red-500/20 border border-red-500/30' : 'bg-white/5'}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <Icons.Calendar />
-                    <span className={`text-sm ${bill.priority === 'RED' ? 'text-red-300' : 'text-white/50'}`}>Action Deadline</span>
-                  </div>
-                  <p className={`font-semibold ${bill.priority === 'RED' ? 'text-red-300' : 'text-white'}`}>{bill.actionDeadline || 'No deadline set'}</p>
+                <div style={{background: bill.priority === 'RED' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', border: bill.priority === 'RED' ? '1px solid rgba(239, 68, 68, 0.3)' : 'none'}}>
+                  <p style={{margin: '0 0 4px 0', fontSize: '12px', color: bill.priority === 'RED' ? '#FCA5A5' : 'rgba(255,255,255,0.5)'}}>📅 Action Deadline</p>
+                  <p style={{margin: 0, fontWeight: '600', color: bill.priority === 'RED' ? '#FCA5A5' : 'white'}}>{bill.actionDeadline || 'No deadline set'}</p>
                 </div>
               </div>
 
-              <div className="bg-white/5 rounded-2xl p-4">
-                <div className="flex items-center gap-2 mb-3 text-violet-400">
-                  <Icons.Users />
-                  <h3 className="text-white font-semibold">Representatives to Contact</h3>
-                </div>
-                <div className="flex flex-wrap gap-2">
+              {/* Reps */}
+              <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px'}}>
+                <p style={{margin: '0 0 12px 0', fontWeight: '600', color: 'white'}}>👥 Representatives to Contact</p>
+                <div style={{display: 'flex', flexWrap: 'wrap', gap: '8px'}}>
                   {bill.repsToContact.split(', ').map(rep => (
-                    <span key={rep} className="px-3 py-2 bg-violet-500/20 text-violet-300 rounded-xl text-sm font-medium">{rep}</span>
+                    <span key={rep} style={{padding: '8px 14px', background: 'rgba(139, 92, 246, 0.2)', color: '#C4B5FD', borderRadius: '12px', fontSize: '14px', fontWeight: '500'}}>{rep}</span>
                   ))}
                 </div>
               </div>
 
-              <div className="flex items-center justify-between bg-white/5 rounded-2xl p-4">
+              {/* Contact status */}
+              <div style={{background: 'rgba(255,255,255,0.05)', borderRadius: '16px', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                 <div>
-                  <h3 className="text-white font-semibold mb-1">Contact Status</h3>
-                  <p className="text-white/60 text-sm">{bill.contacted ? bill.notes || 'Representatives contacted' : 'Not yet contacted'}</p>
+                  <p style={{margin: '0 0 4px 0', fontWeight: '600', color: 'white'}}>Contact Status</p>
+                  <p style={{margin: 0, fontSize: '14px', color: 'rgba(255,255,255,0.6)'}}>{bill.contacted ? (bill.notes || 'Representatives contacted') : 'Not yet contacted'}</p>
                 </div>
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${bill.contacted ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                  {bill.contacted ? <Icons.CheckCircle /> : <Icons.Clock />}
+                <div style={{width: '48px', height: '48px', borderRadius: '50%', background: bill.contacted ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px'}}>
+                  {bill.contacted ? '✅' : '⏳'}
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button className="flex-1 py-3 px-4 bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
-                  <Icons.Users /> Contact Representatives
+              {/* Actions */}
+              <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap'}}>
+                <button style={{flex: 1, padding: '14px 20px', background: 'linear-gradient(135deg, #8B5CF6, #D946EF)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '600', fontSize: '14px', cursor: 'pointer', minWidth: '200px'}}>
+                  👥 Contact Representatives
                 </button>
-                <button className="flex-1 py-3 px-4 bg-white/10 text-white font-semibold rounded-xl hover:bg-white/20 transition-colors flex items-center justify-center gap-2">
-                  <Icons.CheckCircle /> Mark as Contacted
+                <button style={{flex: 1, padding: '14px 20px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: '600', fontSize: '14px', cursor: 'pointer', minWidth: '200px'}}>
+                  ✅ Mark as Contacted
                 </button>
               </div>
             </div>
@@ -393,7 +277,9 @@
       );
     }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    // Render the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
   </script>
 </body>
 </html>
